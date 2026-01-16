@@ -1,0 +1,146 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8scontainerlimits
+  annotations:
+    description: "Requires containers to have memory and CPU limits set and constrains limits to be within the specified maximum values."
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sContainerLimits
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            cpu:
+              type: string
+              description: "Maximum allowed CPU limit"
+            memory:
+              type: string
+              description: "Maximum allowed memory limit"
+            exemptImages:
+              type: array
+              description: "List of exempt container images"
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8scontainerlimits
+
+        import future.keywords.in
+
+        missing(obj, field) = true {
+          not obj[field]
+        }
+
+        missing(obj, field) = true {
+          obj[field] == ""
+        }
+
+        canonify_cpu(orig) = new {
+          is_number(orig)
+          new := orig * 1000
+        }
+
+        canonify_cpu(orig) = new {
+          not is_number(orig)
+          endswith(orig, "m")
+          new := to_number(replace(orig, "m", ""))
+        }
+
+        canonify_cpu(orig) = new {
+          not is_number(orig)
+          not endswith(orig, "m")
+          re_match("^[0-9]+(\\.[0-9]+)?$", orig)
+          new := to_number(orig) * 1000
+        }
+
+        canonify_mem(orig) = new {
+          is_number(orig)
+          new := orig
+        }
+
+        canonify_mem(orig) = new {
+          not is_number(orig)
+          suffix := substring(orig, count(orig) - 2, -1)
+          raw := replace(orig, suffix, "")
+          re_match("^[0-9]+$", raw)
+          suffix == "Ki"
+          new := to_number(raw) * 1024
+        }
+
+        canonify_mem(orig) = new {
+          not is_number(orig)
+          suffix := substring(orig, count(orig) - 2, -1)
+          raw := replace(orig, suffix, "")
+          re_match("^[0-9]+$", raw)
+          suffix == "Mi"
+          new := to_number(raw) * 1024 * 1024
+        }
+
+        canonify_mem(orig) = new {
+          not is_number(orig)
+          suffix := substring(orig, count(orig) - 2, -1)
+          raw := replace(orig, suffix, "")
+          re_match("^[0-9]+$", raw)
+          suffix == "Gi"
+          new := to_number(raw) * 1024 * 1024 * 1024
+        }
+
+        is_exempt(container) {
+          exempt_images := object.get(input, ["parameters", "exemptImages"], [])
+          img := container.image
+          exemption := exempt_images[_]
+          _matches_exemption(party, exemption)
+        }
+
+        _matches_exemption(img, exemption) {
+          not endswith(exemption, "*")
+          img == exemption
+        }
+
+        _matches_exemption(img, exemption) {
+          endswith(exemption, "*")
+          prefix := trim_suffix(exemption, "*")
+          startswith(img, prefix)
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not is_exempt(container)
+          cpu_orig := container.resources.limits.cpu
+          not cpu_orig
+          msg := sprintf("Container <%v> has no CPU limit", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not is_exempt(container)
+          mem_orig := container.resources.limits.memory
+          not mem_orig
+          msg := sprintf("Container <%v> has no memory limit", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not is_exempt(container)
+          cpu_orig := container.resources.limits.cpu
+          cpu_max := input.parameters.cpu
+          cpu := canonify_cpu(cpu_orig)
+          cpu_limit := canonify_cpu(cpu_max)
+          cpu > cpu_limit
+          msg := sprintf("Container <%v> cpu limit <%v> exceeds max <%v>", [container.name, cpu_orig, cpu_max])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not is_exempt(container)
+          mem_orig := container.resources.limits.memory
+          mem_max := input.parameters.memory
+          mem := canonify_mem(mem_orig)
+          mem_limit := canonify_mem(mem_max)
+          mem > mem_limit
+          msg := sprintf("Container <%v> memory limit <%v> exceeds max <%v>", [container.name, mem_orig, mem_max])
+        }

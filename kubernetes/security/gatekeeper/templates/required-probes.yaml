@@ -1,0 +1,136 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredprobes
+  annotations:
+    description: "Requires pods to have readiness and/or liveness probes."
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredProbes
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            probes:
+              type: array
+              description: "List of required probes"
+              items:
+                type: string
+                enum:
+                  - readinessProbe
+                  - livenessProbe
+                  - startupProbe
+            exemptImages:
+              type: array
+              description: "List of exempt container images"
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredprobes
+
+        import future.keywords.in
+
+        is_exempt(container) {
+          exempt_images := object.get(input, ["parameters", "exemptImages"], [])
+          img := container.image
+          exemption := exempt_images[_]
+          _matches_exemption(img, exemption)
+        }
+
+        _matches_exemption(img, exemption) {
+          not endswith(exemption, "*")
+          img == exemption
+        }
+
+        _matches_exemption(img, exemption) {
+          endswith(exemption, "*")
+          prefix := trim_suffix(exemption, "*")
+          startswith(img, prefix)
+        }
+
+        probe_missing(container, probe) = true {
+          not container[probe]
+        }
+
+        probe_missing(container, probe) = true {
+          container[probe] == null
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not is_exempt(container)
+          probe := input.parameters.probes[_]
+          probe_missing(container, probe)
+          msg := sprintf("Container <%v> is missing required probe: %v", [container.name, probe])
+        }
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sblocklatestag
+  annotations:
+    description: "Requires container images to have a tag that is not 'latest'."
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sBlockLatesTag
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            exemptImages:
+              type: array
+              description: "List of exempt container images"
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sblocklatestag
+
+        import future.keywords.in
+
+        is_exempt(container) {
+          exempt_images := object.get(input, ["parameters", "exemptImages"], [])
+          img := container.image
+          exemption := exempt_images[_]
+          _matches_exemption(img, exemption)
+        }
+
+        _matches_exemption(img, exemption) {
+          not endswith(exemption, "*")
+          img == exemption
+        }
+
+        _matches_exemption(img, exemption) {
+          endswith(exemption, "*")
+          prefix := trim_suffix(exemption, "*")
+          startswith(img, prefix)
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not is_exempt(container)
+          has_latest_tag(container.image)
+          msg := sprintf("Container <%v> uses 'latest' tag which is not allowed: %v", [container.name, container.image])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          not is_exempt(container)
+          has_latest_tag(container.image)
+          msg := sprintf("InitContainer <%v> uses 'latest' tag which is not allowed: %v", [container.name, container.image])
+        }
+
+        has_latest_tag(image) {
+          endswith(image, ":latest")
+        }
+
+        has_latest_tag(image) {
+          not contains(image, ":")
+        }

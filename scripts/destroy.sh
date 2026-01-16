@@ -18,7 +18,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 print_warning() {
     echo -e "${RED}"
     echo "╔═══════════════════════════════════════════════════════════════╗"
-    echo "║                        ⚠️  WARNING ⚠️                          ║"
+    echo "║                        ⚠️  WARNING ⚠️                        ║"
     echo "║                                                               ║"
     echo "║   This script will DESTROY all infrastructure resources!      ║"
     echo "║   This action is IRREVERSIBLE!                                ║"

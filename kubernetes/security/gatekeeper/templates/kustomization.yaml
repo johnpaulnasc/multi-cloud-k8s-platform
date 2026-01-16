@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - required-labels.yaml
+  - container-limits.yaml
+  - allowed-repos.yaml
+  - block-privileged.yaml
+  - block-host-namespace.yaml
+  - readonly-rootfs.yaml
+  - required-probes.yaml
+  - run-as-nonroot.yaml

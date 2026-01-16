@@ -1,0 +1,135 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srunasnonroot
+  annotations:
+    description: "Requires containers to run as non-root user."
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRunAsNonRoot
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            exemptImages:
+              type: array
+              description: "List of exempt container images"
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srunasnonroot
+
+        import future.keywords.in
+
+        is_exempt(container) {
+          exempt_images := object.get(input, ["parameters", "exemptImages"], [])
+          img := container.image
+          exemption := exempt_images[_]
+          _matches_exemption(img, exemption)
+        }
+
+        _matches_exemption(img, exemption) {
+          not endswith(exemption, "*")
+          img == exemption
+        }
+
+        _matches_exemption(img, exemption) {
+          endswith(exemption, "*")
+          prefix := trim_suffix(exemption, "*")
+          startswith(img, prefix)
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not is_exempt(container)
+          not input.review.object.spec.securityContext.runAsNonRoot == true
+          not container.securityContext.runAsNonRoot == true
+          msg := sprintf("Container <%v> must set securityContext.runAsNonRoot=true", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not is_exempt(container)
+          container.securityContext.runAsUser == 0
+          msg := sprintf("Container <%v> must not run as root (UID 0)", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          not is_exempt(container)
+          not input.review.object.spec.securityContext.runAsNonRoot == true
+          not container.securityContext.runAsNonRoot == true
+          msg := sprintf("InitContainer <%v> must set securityContext.runAsNonRoot=true", [container.name])
+        }
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdisallowcapabilities
+  annotations:
+    description: "Disallows certain Linux capabilities."
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDisallowCapabilities
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            disallowedCapabilities:
+              type: array
+              description: "List of disallowed capabilities"
+              items:
+                type: string
+            exemptImages:
+              type: array
+              description: "List of exempt container images"
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sdisallowcapabilities
+
+        import future.keywords.in
+
+        is_exempt(container) {
+          exempt_images := object.get(input, ["parameters", "exemptImages"], [])
+          img := container.image
+          exemption := exempt_images[_]
+          _matches_exemption(img, exemption)
+        }
+
+        _matches_exemption(img, exemption) {
+          not endswith(exemption, "*")
+          img == exemption
+        }
+
+        _matches_exemption(img, exemption) {
+          endswith(exemption, "*")
+          prefix := trim_suffix(exemption, "*")
+          startswith(img, prefix)
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not is_exempt(container)
+          caps := container.securityContext.capabilities.add[_]
+          disallowed := input.parameters.disallowedCapabilities[_]
+          upper(caps) == upper(disallowed)
+          msg := sprintf("Container <%v> has disallowed capability: %v", [container.name, caps])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          not is_exempt(container)
+          caps := container.securityContext.capabilities.add[_]
+          disallowed := input.parameters.disallowedCapabilities[_]
+          upper(caps) == upper(disallowed)
+          msg := sprintf("InitContainer <%v> has disallowed capability: %v", [container.name, caps])
+        }

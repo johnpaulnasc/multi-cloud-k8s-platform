@@ -28,7 +28,7 @@ print_banner() {
     echo "╔═══════════════════════════════════════════════════════════════╗"
     echo "║       Multi-Cloud Kubernetes Platform - Setup Script          ║"
     echo "║                                                               ║"
-    echo "║  AWS EKS + OCI OKE | Terraform | ArgoCD | GitOps             ║"
+    echo "║       AWS EKS + OCI OKE | Terraform | ArgoCD | GitOps         ║"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }

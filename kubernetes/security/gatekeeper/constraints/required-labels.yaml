@@ -1,0 +1,58 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: deployment-must-have-labels
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment", "StatefulSet", "DaemonSet"]
+    excludedNamespaces:
+      - kube-system
+      - kube-public
+      - gatekeeper-system
+  parameters:
+    labels:
+      - key: "app.kubernetes.io/name"
+      - key: "app.kubernetes.io/version"
+      - key: "app.kubernetes.io/managed-by"
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: namespace-must-have-owner
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Namespace"]
+    excludedNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - default
+      - gatekeeper-system
+  parameters:
+    labels:
+      - key: "app.kubernetes.io/part-of"
+    message: "All namespaces must have 'app.kubernetes.io/part-of' label"
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: prod-deployment-must-have-team
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    namespaces:
+      - prod
+  parameters:
+    labels:
+      - key: "team"
+      - key: "cost-center"
+    message: "Production deployments must have 'team' and 'cost-center' labels"

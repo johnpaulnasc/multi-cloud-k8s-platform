@@ -1,0 +1,58 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sreadonlyrootfilesystem
+  annotations:
+    description: "Requires containers to run with a read-only root filesystem."
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sReadOnlyRootFilesystem
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            exemptImages:
+              type: array
+              description: "List of exempt container images"
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sreadonlyrootfilesystem
+
+        import future.keywords.in
+
+        is_exempt(container) {
+          exempt_images := object.get(input, ["parameters", "exemptImages"], [])
+          img := container.image
+          exemption := exempt_images[_]
+          _matches_exemption(img, exemption)
+        }
+
+        _matches_exemption(img, exemption) {
+          not endswith(exemption, "*")
+          img == exemption
+        }
+
+        _matches_exemption(img, exemption) {
+          endswith(exemption, "*")
+          prefix := trim_suffix(exemption, "*")
+          startswith(img, prefix)
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not is_exempt(container)
+          not container.securityContext.readOnlyRootFilesystem == true
+          msg := sprintf("Container <%v> does not have readOnlyRootFilesystem set to true", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          not is_exempt(container)
+          not container.securityContext.readOnlyRootFilesystem == true
+          msg := sprintf("InitContainer <%v> does not have readOnlyRootFilesystem set to true", [container.name])
+        }
