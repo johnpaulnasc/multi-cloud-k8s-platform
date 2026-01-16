@@ -1,0 +1,29 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sAllowedRepos
+metadata:
+  name: allowed-container-registries
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+      - apiGroups: ["apps"]
+        kinds: ["Deployment", "StatefulSet", "DaemonSet"]
+    excludedNamespaces:
+      - kube-system
+      - kube-public
+      - gatekeeper-system
+  parameters:
+    repos:
+      # AWS ECR
+      - "*.dkr.ecr.*.amazonaws.com/"
+      # OCI Container Registry
+      - "*.ocir.io/"
+      # Official registries
+      - "docker.io/library/"
+      - "gcr.io/"
+      - "ghcr.io/"
+      - "quay.io/"
+      # Kubernetes official images
+      - "registry.k8s.io/"

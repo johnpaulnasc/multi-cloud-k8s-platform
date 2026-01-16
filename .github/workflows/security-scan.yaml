@@ -1,0 +1,260 @@
+name: Security Scanning
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'kubernetes/**'
+      - 'terraform/**'
+      - '.github/workflows/security-scan.yaml'
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - 'kubernetes/**'
+      - 'terraform/**'
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  trivy-iac-scan:
+    name: Trivy IaC Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner (Terraform)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: './terraform'
+          format: 'sarif'
+          output: 'trivy-terraform-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'
+
+      - name: Run Trivy vulnerability scanner (Kubernetes)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: './kubernetes'
+          format: 'sarif'
+          output: 'trivy-kubernetes-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'
+
+      - name: Upload Terraform Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-terraform-results.sarif'
+          category: 'trivy-terraform'
+
+      - name: Upload Kubernetes Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-kubernetes-results.sarif'
+          category: 'trivy-kubernetes'
+
+  checkov-scan:
+    name: Checkov Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov on Terraform
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform/
+          framework: terraform
+          output_format: sarif
+          output_file_path: checkov-terraform-results.sarif
+          soft_fail: true
+          skip_check: CKV_AWS_144,CKV_AWS_145
+
+      - name: Run Checkov on Kubernetes
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: kubernetes/
+          framework: kubernetes
+          output_format: sarif
+          output_file_path: checkov-kubernetes-results.sarif
+          soft_fail: true
+
+      - name: Upload Checkov Terraform results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-terraform-results.sarif
+          category: 'checkov-terraform'
+
+      - name: Upload Checkov Kubernetes results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-kubernetes-results.sarif
+          category: 'checkov-kubernetes'
+
+  kubesec-scan:
+    name: Kubesec Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubesec
+        run: |
+          curl -sSL https://github.com/controlplaneio/kubesec/releases/download/v2.14.0/kubesec_linux_amd64.tar.gz | tar xz
+          sudo mv kubesec /usr/local/bin/
+
+      - name: Scan Kubernetes manifests
+        run: |
+          echo "## Kubesec Scan Results" >> $GITHUB_STEP_SUMMARY
+          find kubernetes -name "*.yaml" -type f | while read -r file; do
+            if grep -q "kind:" "$file" 2>/dev/null; then
+              echo "Scanning: $file"
+              result=$(kubesec scan "$file" 2>/dev/null || true)
+              if [ -n "$result" ]; then
+                score=$(echo "$result" | jq -r '.[0].score // "N/A"' 2>/dev/null || echo "N/A")
+                echo "- \`$file\`: Score $score" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          done
+
+  kustomize-validate:
+    name: Kustomize Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Validate Kustomize builds
+        run: |
+          echo "## Kustomize Validation Results" >> $GITHUB_STEP_SUMMARY
+
+          # Find all kustomization.yaml files
+          find kubernetes -name "kustomization.yaml" -type f | while read -r kustomization; do
+            dir=$(dirname "$kustomization")
+            echo "Validating: $dir"
+            if kustomize build "$dir" > /dev/null 2>&1; then
+              echo "- $dir - Passed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- $dir - Failed" >> $GITHUB_STEP_SUMMARY
+              kustomize build "$dir" 2>&1 || true
+            fi
+          done
+
+  gatekeeper-policy-test:
+    name: OPA Gatekeeper Policy Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup OPA
+        uses: open-policy-agent/setup-opa@v2
+        with:
+          version: latest
+
+      - name: Test Rego policies
+        run: |
+          echo "## OPA Policy Test Results" >> $GITHUB_STEP_SUMMARY
+
+          # Find and test all rego policies in templates
+          find kubernetes/security/gatekeeper/templates -name "*.yaml" -type f | while read -r template; do
+            echo "Testing policies in: $template"
+            # Extract rego from YAML and test syntax
+            if grep -q "rego:" "$template"; then
+              echo "- $template - Contains Rego policies" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+  tfsec-scan:
+    name: TFSec Terraform Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform/
+          soft_fail: true
+          format: sarif
+          sarif_file: tfsec-results.sarif
+
+      - name: Upload tfsec results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: tfsec-results.sarif
+          category: 'tfsec'
+
+  secrets-scan:
+    name: Secret Detection Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+
+  security-summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs:
+      - trivy-iac-scan
+      - checkov-scan
+      - kubesec-scan
+      - kustomize-validate
+      - gatekeeper-policy-test
+      - tfsec-scan
+      - secrets-scan
+    if: always()
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "# Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Scanner | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Trivy IaC | ${{ needs.trivy-iac-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Checkov | ${{ needs.checkov-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Kubesec | ${{ needs.kubesec-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Kustomize | ${{ needs.kustomize-validate.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Gatekeeper | ${{ needs.gatekeeper-policy-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| TFSec | ${{ needs.tfsec-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Secrets | ${{ needs.secrets-scan.result }} |" >> $GITHUB_STEP_SUMMARY

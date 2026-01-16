@@ -1,0 +1,73 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: staging-developers
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: rbac
+    environment: staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-viewer
+subjects:
+  - kind: Group
+    name: developers
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: staging-operators
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: rbac
+    environment: staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-operator
+subjects:
+  - kind: Group
+    name: operators
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: staging-qa-team
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: rbac
+    environment: staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-developer
+subjects:
+  - kind: Group
+    name: qa-team
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: staging-deployer
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: rbac
+    environment: staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: staging-deployer-binding
+  namespace: staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-developer
+subjects:
+  - kind: ServiceAccount
+    name: staging-deployer
+    namespace: staging

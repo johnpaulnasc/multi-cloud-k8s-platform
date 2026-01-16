@@ -310,6 +310,7 @@ spec:
 | Terraform Apply | Merge to main | Apply infrastructure changes |
 | Kubernetes Validate | PR to kubernetes/ | Validate K8s manifests |
 | ArgoCD Sync | Manual | Trigger ArgoCD sync |
+| Security Scan | Push/PR/Weekly | Trivy, Checkov, TFSec, Kubesec, Gitleaks |
 | Release | Tag push | Create GitHub release |
 
 ### Required Secrets
@@ -334,22 +335,211 @@ Configure these secrets in your GitHub repository:
 
 ## Security
 
-### Network Security
+The platform implements defense-in-depth security with multiple layers of protection.
 
-- Default deny network policies
-- Namespace isolation
-- Ingress/Egress rules per application
+### Security Architecture
 
-### RBAC
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Security Layers                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                    Admission Control (OPA Gatekeeper)               │    │
+│  │  • Required labels • Container limits • Allowed repos • Probes     │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                     Pod Security Standards                          │    │
+│  │  • Restricted (prod) • Baseline (staging) • Privileged (system)    │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                     Network Policies                                │    │
+│  │  • Default deny • Namespace isolation • Egress control             │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                     RBAC (Per Environment)                          │    │
+│  │  • Dev: developers full access • Staging: QA + viewers             │    │
+│  │  • Prod: SRE only + read-only for devs                             │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │              Secrets Management (External Secrets + Vault)          │    │
+│  │  • HashiCorp Vault • AWS Secrets Manager • OCI Vault               │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                  Vulnerability Scanning (Trivy)                     │    │
+│  │  • Image scanning • Config auditing • Secret detection             │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-- Cluster-wide roles: `platform-admin`, `platform-developer`, `platform-viewer`
-- Project-scoped roles in ArgoCD
-- Principle of least privilege
+### Pod Security Standards
+
+The platform enforces Kubernetes Pod Security Standards per namespace:
+
+| Environment | Enforce | Audit | Warn |
+|-------------|---------|-------|------|
+| Production | `restricted` | `restricted` | `restricted` |
+| Staging | `baseline` | `restricted` | `restricted` |
+| Development | `baseline` | `baseline` | `restricted` |
+| System (kube-system, etc.) | `privileged` | `privileged` | `privileged` |
+
+### Network Policies
+
+- **Default deny**: All ingress/egress blocked unless explicitly allowed
+- **Namespace isolation**: Pods can only communicate within their namespace by default
+- **Controlled egress**: DNS, HTTPS, and cloud metadata access allowed
+- **Cross-namespace rules**: Monitoring and ArgoCD namespaces have specific access
+
+Deploy network policies:
+```bash
+kustomize build kubernetes/security/network-policies | kubectl apply -f -
+```
+
+### OPA Gatekeeper Policies
+
+Admission control policies enforce security at deployment time:
+
+| Policy | Enforcement | Description |
+|--------|-------------|-------------|
+| `block-privileged-containers` | Deny | Prevents privileged containers |
+| `block-host-namespace` | Deny | Prevents hostNetwork, hostPID, hostIPC |
+| `require-run-as-nonroot` | Deny | Requires runAsNonRoot: true |
+| `require-readonly-rootfs` | Warn | Recommends read-only root filesystem |
+| `block-latest-tag` | Deny | Blocks :latest image tag |
+| `require-probes` | Warn/Deny | Requires liveness/readiness probes |
+| `allowed-repos` | Deny | Restricts container registries |
+| `container-limits` | Deny | Requires resource limits |
+| `required-labels` | Deny | Enforces standard labels |
+
+Deploy Gatekeeper policies:
+```bash
+kustomize build kubernetes/security/gatekeeper | kubectl apply -f -
+```
+
+### RBAC (Role-Based Access Control)
+
+Granular RBAC per environment following principle of least privilege:
+
+**Cluster Roles:**
+- `platform-admin` - Full cluster access
+- `security-auditor` - Read-only security resources
+- `monitoring-viewer` - View metrics and monitoring data
+
+**Namespace Roles:**
+- `namespace-operator` - Full namespace control
+- `namespace-developer` - Deploy and manage workloads
+- `namespace-viewer` - Read-only access
+
+**Environment Permissions:**
+| Role | Dev | Staging | Prod |
+|------|-----|---------|------|
+| Developers | Full (operator) | Read-only | Read-only |
+| QA Team | Viewer | Full (developer) | Read-only |
+| SRE Team | Operator | Operator | Full (operator) |
+| On-Call | - | Developer | Developer |
+
+Deploy RBAC:
+```bash
+# Per environment
+kustomize build kubernetes/security/rbac/dev | kubectl apply -f -
+kustomize build kubernetes/security/rbac/staging | kubectl apply -f -
+kustomize build kubernetes/security/rbac/prod | kubectl apply -f -
+```
 
 ### Secrets Management
 
-- Kubernetes Secrets encryption at rest (AWS KMS / OCI Vault)
-- External Secrets Operator support (optional)
+The platform uses External Secrets Operator integrated with multiple secret backends:
+
+**Supported Backends:**
+- HashiCorp Vault (recommended)
+- AWS Secrets Manager
+- OCI Vault
+
+**Example ExternalSecret:**
+```yaml
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: database-credentials
+  namespace: prod
+spec:
+  refreshInterval: 15m
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: database-credentials
+  data:
+    - secretKey: DB_PASSWORD
+      remoteRef:
+        key: prod/database
+        property: password
+```
+
+Deploy External Secrets:
+```bash
+kustomize build kubernetes/security/external-secrets/overlays/prod | kubectl apply -f -
+```
+
+### Vulnerability Scanning (Trivy)
+
+Continuous security scanning with Trivy Operator:
+
+- **Image vulnerabilities**: Scans all container images
+- **Config auditing**: Detects misconfigurations
+- **Secret detection**: Finds exposed secrets in images
+
+View vulnerability reports:
+```bash
+# List all vulnerability reports
+kubectl get vulnerabilityreports -A
+
+# Get detailed report
+kubectl describe vulnerabilityreport <name> -n <namespace>
+
+# List config audit reports
+kubectl get configauditreports -A
+```
+
+### Security Scanning CI/CD
+
+The platform includes automated security scanning in GitHub Actions:
+
+| Scanner | Target | Description |
+|---------|--------|-------------|
+| **Trivy** | IaC | Terraform and Kubernetes misconfigurations |
+| **Checkov** | IaC | Policy-as-code security checks |
+| **TFSec** | Terraform | Terraform-specific security analysis |
+| **Kubesec** | Kubernetes | Kubernetes manifest security scoring |
+| **Gitleaks** | Repository | Secret detection in code |
+| **TruffleHog** | Repository | Verified secret detection |
+
+Security scan results are uploaded to GitHub Security tab (SARIF format).
+
+Run security scan manually:
+```bash
+# Trigger workflow
+gh workflow run security-scan.yaml
+```
+
+### Security Hardening Checklist
+
+- [ ] Enable Pod Security Standards for all namespaces
+- [ ] Deploy OPA Gatekeeper with all constraint templates
+- [ ] Configure network policies for all namespaces
+- [ ] Set up RBAC per environment
+- [ ] Integrate External Secrets Operator with Vault
+- [ ] Enable Trivy vulnerability scanning
+- [ ] Configure security scanning in CI/CD
+- [ ] Enable audit logging on clusters
+- [ ] Configure secrets encryption at rest (KMS/OCI Vault)
+- [ ] Implement image signing and verification
 
 ## Observability Stack
 

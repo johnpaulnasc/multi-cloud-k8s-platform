@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - pod-security-standards
+  - network-policies
+  - gatekeeper
+  - trivy
+  - rbac/base
+  - external-secrets/base
+
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/part-of: security
