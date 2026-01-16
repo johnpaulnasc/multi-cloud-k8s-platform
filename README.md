@@ -44,7 +44,8 @@ A production-ready multi-cloud Kubernetes platform supporting **AWS EKS** and **
 - **GitOps**: ArgoCD for declarative application delivery
 - **Environment Management**: Separate configurations for dev, staging, and prod
 - **Security**: Network policies, RBAC, pod security, and secrets encryption
-- **Observability Ready**: Pre-configured for Prometheus, Grafana, and AlertManager
+- **Full Observability Stack**: Prometheus, Grafana, Loki, Jaeger, AlertManager
+- **Cross-Cloud Dashboards**: Compare metrics between AWS and OCI clusters
 - **CI/CD**: GitHub Actions workflows for automation
 - **Cost Optimization**: Spot instances support for non-production environments
 
@@ -85,6 +86,11 @@ multi-cloud-k8s-platform/
 │   │   ├── base/
 │   │   └── overlays/
 │   └── monitoring/
+│       ├── prometheus/       # Metrics collection
+│       ├── grafana/          # Visualization & dashboards
+│       ├── loki/             # Log aggregation
+│       ├── jaeger/           # Distributed tracing
+│       └── alertmanager/     # Alerting
 ├── scripts/
 │   ├── setup.sh
 │   ├── destroy.sh
@@ -345,20 +351,164 @@ Configure these secrets in your GitHub repository:
 - Kubernetes Secrets encryption at rest (AWS KMS / OCI Vault)
 - External Secrets Operator support (optional)
 
-## Monitoring & Observability
+## Observability Stack
 
-The platform is pre-configured for:
+The platform includes a comprehensive observability stack for metrics, logs, traces, and alerting.
 
-- **Prometheus** - Metrics collection
-- **Grafana** - Visualization
-- **AlertManager** - Alerting
-- **Loki** - Log aggregation (optional)
+### Architecture
 
-Deploy monitoring stack:
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Observability Stack                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
+│  │ Prometheus  │    │    Loki     │    │   Jaeger    │    │ Alertmanager│  │
+│  │  (Metrics)  │    │   (Logs)    │    │  (Traces)   │    │  (Alerts)   │  │
+│  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘    └──────┬──────┘  │
+│         │                  │                  │                  │         │
+│         └──────────────────┴──────────────────┴──────────────────┘         │
+│                                    │                                        │
+│                            ┌───────▼───────┐                                │
+│                            │    Grafana    │                                │
+│                            │ (Dashboards)  │                                │
+│                            └───────────────┘                                │
+│                                                                             │
+│  Data Collection:                                                           │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                     │
+│  │Node Exporter│    │  Promtail   │    │OTel Collector│                     │
+│  │   (Nodes)   │    │   (Logs)    │    │  (Traces)   │                     │
+│  └─────────────┘    └─────────────┘    └─────────────┘                     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Components
+
+| Component | Description | Port |
+|-----------|-------------|------|
+| **Prometheus** | Metrics collection and storage | 9090 |
+| **Grafana** | Visualization and dashboards | 3000 |
+| **Loki** | Log aggregation (like Prometheus for logs) | 3100 |
+| **Promtail** | Log collection agent (DaemonSet) | 9080 |
+| **Jaeger** | Distributed tracing | 16686 |
+| **OTel Collector** | OpenTelemetry trace processing | 4317/4318 |
+| **Alertmanager** | Alert routing and notifications | 9093 |
+| **kube-state-metrics** | Kubernetes object metrics | 8080 |
+| **node-exporter** | Node-level metrics | 9100 |
+
+### Grafana Dashboards
+
+| Dashboard | Description |
+|-----------|-------------|
+| **Kubernetes Cluster Overview** | Nodes, pods, CPU, memory, namespaces |
+| **Multi-Cloud Overview** | Cross-cloud comparison (AWS vs OCI) |
+| **Application Metrics (RED)** | Rate, Errors, Duration per service |
+| **Logs Explorer** | Search and analyze logs from Loki |
+| **Tracing Overview** | Distributed traces from Jaeger |
+
+### Alert Rules
+
+The platform includes pre-configured alerts for:
+
+**Infrastructure Alerts:**
+- `NodeNotReady` - Node is not ready for 5+ minutes
+- `NodeHighCPU` - CPU usage above 85%
+- `NodeHighMemory` - Memory usage above 85%
+- `NodeDiskFull` - Disk usage above 90%
+
+**Pod/Deployment Alerts:**
+- `PodCrashLooping` - Pod restarting frequently
+- `PodNotReady` - Pod not ready for 10+ minutes
+- `ContainerOOMKilled` - Container killed due to OOM
+- `DeploymentReplicasMismatch` - Desired vs available replicas
+
+**SLO-Based Alerts:**
+- `HighErrorRate` - Error rate above 5%
+- `HighLatency` - p95 latency above 1 second
+- `LowAvailability` - Availability below 99.9%
+
+**Multi-Cloud Alerts:**
+- `CloudProviderDown` - No nodes detected for a cloud provider
+- `CrossCloudLatencyHigh` - High latency between clouds
+
+### Deploy Observability Stack
+
+**Via ArgoCD (Recommended):**
+```bash
+# The monitoring stack is automatically deployed via app-of-apps
+kubectl apply -f kubernetes/argocd/base/applications/app-of-apps.yaml
+```
+
+**Manual Deployment:**
+```bash
+# Deploy entire stack
+kustomize build kubernetes/monitoring | kubectl apply -f -
+
+# Or deploy individual components
+kustomize build kubernetes/monitoring/prometheus/base | kubectl apply -f -
+kustomize build kubernetes/monitoring/grafana/base | kubectl apply -f -
+kustomize build kubernetes/monitoring/loki/base | kubectl apply -f -
+kustomize build kubernetes/monitoring/jaeger/base | kubectl apply -f -
+kustomize build kubernetes/monitoring/alertmanager/base | kubectl apply -f -
+```
+
+### Access Dashboards
 
 ```bash
-kubectl apply -f kubernetes/monitoring/
+# Grafana (default: admin/admin123!)
+kubectl port-forward svc/grafana -n monitoring 3000:3000
+
+# Prometheus
+kubectl port-forward svc/prometheus -n monitoring 9090:9090
+
+# Jaeger UI
+kubectl port-forward svc/jaeger-query -n monitoring 16686:16686
+
+# Alertmanager
+kubectl port-forward svc/alertmanager -n monitoring 9093:9093
 ```
+
+### Configure Alerting
+
+Update `kubernetes/monitoring/alertmanager/base/alertmanager-config.yaml` with your notification channels:
+
+```yaml
+receivers:
+  - name: 'slack-alerts'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+        channel: '#alerts'
+
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: 'YOUR_PAGERDUTY_KEY'
+```
+
+### Instrument Your Applications
+
+**For metrics (Prometheus):**
+```yaml
+# Add annotations to your pods
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+```
+
+**For tracing (OpenTelemetry):**
+```yaml
+env:
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: "http://otel-collector.monitoring:4317"
+  - name: OTEL_SERVICE_NAME
+    value: "my-service"
+```
+
+**For logs (Loki/Promtail):**
+- Logs are automatically collected from stdout/stderr
+- Use structured logging (JSON) for better querying
+- Add labels via pod annotations for filtering
 
 ## Troubleshooting
 
