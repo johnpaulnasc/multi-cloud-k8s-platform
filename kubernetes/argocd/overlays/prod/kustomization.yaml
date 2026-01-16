@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argocd
+
+resources:
+  - ../../base
+  - applications/
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /data/url
+        value: https://argocd.example.com
+      - op: replace
+        path: /data/admin.enabled
+        value: "false"
+    target:
+      kind: ConfigMap
+      name: argocd-cm
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+    target:
+      kind: Deployment
+      name: argocd-server
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+    target:
+      kind: Deployment
+      name: argocd-repo-server

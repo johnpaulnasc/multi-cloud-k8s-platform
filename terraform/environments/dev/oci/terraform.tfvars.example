@@ -1,0 +1,17 @@
+# =============================================================================
+# Development Environment - OCI Configuration Example
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in your values
+
+tenancy_ocid     = "ocid1.tenancy.oc1..example"
+user_ocid        = "ocid1.user.oc1..example"
+fingerprint      = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+private_key_path = "~/.oci/oci_api_key.pem"
+oci_region       = "us-ashburn-1"
+compartment_id   = "ocid1.compartment.oc1..example"
+
+vcn_cidr           = "10.20.0.0/16"
+kubernetes_version = null # Uses latest
+
+ssh_public_key = "ssh-rsa AAAA... user@host"
+node_image_id  = "ocid1.image.oc1..example"

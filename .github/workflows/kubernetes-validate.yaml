@@ -1,0 +1,121 @@
+# =============================================================================
+# Kubernetes Manifests Validation Workflow
+# =============================================================================
+name: Kubernetes Validate
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - 'kubernetes/**'
+      - '.github/workflows/kubernetes-*.yaml'
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'kubernetes/**'
+
+jobs:
+  validate-manifests:
+    name: Validate Kubernetes Manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Install kubeconform
+        run: |
+          wget https://github.com/yannh/kubeconform/releases/download/v0.6.4/kubeconform-linux-amd64.tar.gz
+          tar xf kubeconform-linux-amd64.tar.gz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Validate Base Manifests
+        run: |
+          echo "Validating base namespaces..."
+          kustomize build kubernetes/base/namespaces | kubeconform -strict -summary
+
+          echo "Validating base RBAC..."
+          kustomize build kubernetes/base/rbac | kubeconform -strict -summary
+
+          echo "Validating base network policies..."
+          kustomize build kubernetes/base/network-policies | kubeconform -strict -summary
+
+          echo "Validating base resource quotas..."
+          kustomize build kubernetes/base/resource-quotas | kubeconform -strict -summary
+
+      - name: Validate App Example - All Environments
+        run: |
+          for env in dev staging prod; do
+            echo "Validating app-example for $env..."
+            kustomize build kubernetes/apps/app-example/overlays/$env | kubeconform -strict -summary -skip Application
+          done
+
+      - name: Validate ArgoCD - All Environments
+        run: |
+          for env in dev staging prod; do
+            echo "Validating ArgoCD for $env..."
+            kustomize build kubernetes/argocd/overlays/$env | kubeconform -strict -summary -skip Application,AppProject || true
+          done
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Install Trivy
+        run: |
+          wget https://github.com/aquasecurity/trivy/releases/download/v0.48.0/trivy_0.48.0_Linux-64bit.tar.gz
+          tar xf trivy_0.48.0_Linux-64bit.tar.gz
+          sudo mv trivy /usr/local/bin/
+
+      - name: Scan Kubernetes Manifests
+        run: |
+          for env in dev staging prod; do
+            echo "Scanning app-example for $env..."
+            kustomize build kubernetes/apps/app-example/overlays/$env > /tmp/manifests-$env.yaml
+            trivy config /tmp/manifests-$env.yaml --severity HIGH,CRITICAL --exit-code 0
+          done
+
+      - name: Install Kubesec
+        run: |
+          wget https://github.com/controlplaneio/kubesec/releases/download/v2.14.0/kubesec_linux_amd64.tar.gz
+          tar xf kubesec_linux_amd64.tar.gz
+          sudo mv kubesec /usr/local/bin/
+
+      - name: Run Kubesec Scan
+        run: |
+          kustomize build kubernetes/apps/app-example/base > /tmp/app-manifests.yaml
+          kubesec scan /tmp/app-manifests.yaml || true
+
+  lint:
+    name: Lint Kubernetes Manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Run yamllint
+        run: |
+          yamllint -c .yamllint.yaml kubernetes/ || true

@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-example-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: applications
+
+  source:
+    repoURL: https://github.com/johnpaulnasc/multi-cloud-k8s-platform.git
+    targetRevision: HEAD
+    path: kubernetes/apps/app-example/overlays/staging
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app-example
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,139 @@
+# =============================================================================
+# Terraform Apply Workflow
+# =============================================================================
+name: Terraform Apply
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      cloud:
+        description: 'Cloud provider'
+        required: true
+        type: choice
+        options:
+          - aws
+          - oci
+          - both
+      auto_approve:
+        description: 'Auto approve terraform apply'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  TF_VERSION: '1.6.0'
+
+jobs:
+  terraform-apply-aws:
+    name: Terraform Apply - AWS
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      github.event.inputs.cloud == 'aws' ||
+      github.event.inputs.cloud == 'both'
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}/aws
+        run: terraform init -input=false
+
+      - name: Terraform Apply
+        working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}/aws
+        run: |
+          if [ "${{ github.event.inputs.auto_approve }}" == "true" ]; then
+            terraform apply -input=false -auto-approve
+          else
+            terraform apply -input=false -auto-approve
+          fi
+
+      - name: Get Outputs
+        id: outputs
+        working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}/aws
+        run: |
+          echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
+          echo "cluster_endpoint=$(terraform output -raw cluster_endpoint)" >> $GITHUB_OUTPUT
+
+      - name: Update Kubeconfig
+        run: |
+          aws eks update-kubeconfig --region us-east-1 --name ${{ steps.outputs.outputs.cluster_name }}
+
+      - name: Verify Cluster
+        run: kubectl get nodes
+
+  terraform-apply-oci:
+    name: Terraform Apply - OCI
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      github.event.inputs.cloud == 'oci' ||
+      github.event.inputs.cloud == 'both'
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup OCI CLI
+        run: |
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}/oci
+        run: terraform init -input=false
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_CLI_TENANCY }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_CLI_USER }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          TF_VAR_private_key_path: ~/.oci/oci_api_key.pem
+
+      - name: Terraform Apply
+        working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}/oci
+        run: terraform apply -input=false -auto-approve
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_CLI_TENANCY }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_CLI_USER }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          TF_VAR_private_key_path: ~/.oci/oci_api_key.pem
+          TF_VAR_compartment_id: ${{ secrets.OCI_COMPARTMENT_ID }}
+          TF_VAR_node_image_id: ${{ secrets.OCI_NODE_IMAGE_ID }}
+          TF_VAR_oci_region: ${{ secrets.OCI_CLI_REGION }}

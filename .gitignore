@@ -1,0 +1,81 @@
+# =============================================================================
+# Multi-Cloud Kubernetes Platform - .gitignore
+# =============================================================================
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfvars
+!*.tfvars.example
+
+# Terraform docs
+.terraform-docs.yaml
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Secrets and credentials
+*.pem
+*.key
+.env
+.env.*
+secrets/
+credentials/
+*.credentials
+
+# AWS
+.aws/
+
+# OCI
+.oci/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Backups
+backups/
+*.backup
+
+# Build outputs
+dist/
+build/
+
+# Node (if using any JS tools)
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Test coverage
+coverage/
+.coverage
+
+# Temporary files
+tmp/
+temp/
+*.tmp

@@ -1,0 +1,22 @@
+# =============================================================================
+# YAML Lint Configuration
+# =============================================================================
+---
+extends: default
+
+rules:
+  line-length:
+    max: 200
+    level: warning
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+  comments:
+    min-spaces-from-content: 1
+  document-start: disable
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no']
+
+ignore: |
+  .github/
+  kubernetes/argocd/base/kustomization.yaml

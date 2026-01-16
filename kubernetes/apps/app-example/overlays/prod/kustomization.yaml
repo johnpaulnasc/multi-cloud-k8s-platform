@@ -1,0 +1,65 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: app-example
+
+resources:
+  - ../../base
+
+namePrefix: prod-
+
+commonLabels:
+  environment: prod
+
+commonAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "80"
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+    target:
+      kind: Deployment
+      name: app-example
+  - patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 20
+    target:
+      kind: HorizontalPodAutoscaler
+      name: app-example
+  - patch: |-
+      - op: replace
+        path: /spec/minAvailable
+        value: 2
+    target:
+      kind: PodDisruptionBudget
+      name: app-example
+  - patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: app-example.example.com
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts:
+              - app-example.example.com
+            secretName: app-example-tls
+    target:
+      kind: Ingress
+      name: app-example
+  - path: deployment-resources-patch.yaml
+    target:
+      kind: Deployment
+      name: app-example
+
+configMapGenerator:
+  - name: app-example-config
+    literals:
+      - ENVIRONMENT=prod
+      - LOG_LEVEL=warn

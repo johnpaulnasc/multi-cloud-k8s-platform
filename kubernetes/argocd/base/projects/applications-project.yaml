@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: applications
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Application workloads
+
+  sourceRepos:
+    - https://github.com/johnpaulnasc/multi-cloud-k8s-platform.git
+    - https://github.com/johnpaulnasc/*
+
+  destinations:
+    - namespace: 'app-*'
+      server: https://kubernetes.default.svc
+    - namespace: 'app-*'
+      server: '*'
+
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: '*'
+    - group: apps
+      kind: '*'
+    - group: batch
+      kind: '*'
+    - group: networking.k8s.io
+      kind: '*'
+    - group: autoscaling
+      kind: '*'
+    - group: policy
+      kind: '*'
+
+  orphanedResources:
+    warn: true
+
+  roles:
+    - name: app-admin
+      description: Full access to applications project
+      policies:
+        - p, proj:applications:app-admin, applications, *, applications/*, allow
+      groups:
+        - developers

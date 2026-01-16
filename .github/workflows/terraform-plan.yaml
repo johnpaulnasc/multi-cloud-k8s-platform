@@ -1,0 +1,211 @@
+# =============================================================================
+# Terraform Plan Workflow
+# =============================================================================
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform-*.yaml'
+
+env:
+  TF_VERSION: '1.6.0'
+  TF_LOG: INFO
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      aws_dev: ${{ steps.changes.outputs.aws_dev }}
+      aws_staging: ${{ steps.changes.outputs.aws_staging }}
+      aws_prod: ${{ steps.changes.outputs.aws_prod }}
+      oci_dev: ${{ steps.changes.outputs.oci_dev }}
+      oci_staging: ${{ steps.changes.outputs.oci_staging }}
+      oci_prod: ${{ steps.changes.outputs.oci_prod }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            aws_dev:
+              - 'terraform/environments/dev/aws/**'
+              - 'terraform/modules/**'
+            aws_staging:
+              - 'terraform/environments/staging/aws/**'
+              - 'terraform/modules/**'
+            aws_prod:
+              - 'terraform/environments/prod/aws/**'
+              - 'terraform/modules/**'
+            oci_dev:
+              - 'terraform/environments/dev/oci/**'
+              - 'terraform/modules/**'
+            oci_staging:
+              - 'terraform/environments/staging/oci/**'
+              - 'terraform/modules/**'
+            oci_prod:
+              - 'terraform/environments/prod/oci/**'
+              - 'terraform/modules/**'
+
+  terraform-plan-aws:
+    name: Terraform Plan - AWS
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: dev
+            changed: ${{ needs.detect-changes.outputs.aws_dev }}
+          - environment: staging
+            changed: ${{ needs.detect-changes.outputs.aws_staging }}
+          - environment: prod
+            changed: ${{ needs.detect-changes.outputs.aws_prod }}
+    if: |
+      needs.detect-changes.outputs.aws_dev == 'true' ||
+      needs.detect-changes.outputs.aws_staging == 'true' ||
+      needs.detect-changes.outputs.aws_prod == 'true'
+
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        if: matrix.changed == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        if: matrix.changed == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        if: matrix.changed == 'true'
+        working-directory: terraform/environments/${{ matrix.environment }}/aws
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        if: matrix.changed == 'true'
+        working-directory: terraform/environments/${{ matrix.environment }}/aws
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: matrix.changed == 'true'
+        id: plan
+        working-directory: terraform/environments/${{ matrix.environment }}/aws
+        run: |
+          terraform plan -input=false -no-color -out=tfplan 2>&1 | tee plan_output.txt
+          echo "plan_output<<EOF" >> $GITHUB_OUTPUT
+          cat plan_output.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Comment PR
+        if: matrix.changed == 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `### Terraform Plan - AWS ${{ matrix.environment }}
+
+            \`\`\`hcl
+            ${{ steps.plan.outputs.plan_output }}
+            \`\`\`
+
+            *Pushed by: @${{ github.actor }}*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+  terraform-plan-oci:
+    name: Terraform Plan - OCI
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: dev
+            changed: ${{ needs.detect-changes.outputs.oci_dev }}
+          - environment: staging
+            changed: ${{ needs.detect-changes.outputs.oci_staging }}
+          - environment: prod
+            changed: ${{ needs.detect-changes.outputs.oci_prod }}
+    if: |
+      needs.detect-changes.outputs.oci_dev == 'true' ||
+      needs.detect-changes.outputs.oci_staging == 'true' ||
+      needs.detect-changes.outputs.oci_prod == 'true'
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup OCI CLI
+        if: matrix.changed == 'true'
+        uses: oracle-actions/run-oci-cli-command@v1.1
+        with:
+          command: 'oci --version'
+        env:
+          OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+
+      - name: Setup Terraform
+        if: matrix.changed == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        if: matrix.changed == 'true'
+        working-directory: terraform/environments/${{ matrix.environment }}/oci
+        run: terraform init -input=false
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_CLI_TENANCY }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_CLI_USER }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          TF_VAR_private_key_path: /dev/null
+
+      - name: Terraform Validate
+        if: matrix.changed == 'true'
+        working-directory: terraform/environments/${{ matrix.environment }}/oci
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: matrix.changed == 'true'
+        id: plan
+        working-directory: terraform/environments/${{ matrix.environment }}/oci
+        run: |
+          terraform plan -input=false -no-color 2>&1 | tee plan_output.txt || true
+          echo "plan_output<<EOF" >> $GITHUB_OUTPUT
+          head -100 plan_output.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_CLI_TENANCY }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_CLI_USER }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          TF_VAR_compartment_id: ${{ secrets.OCI_COMPARTMENT_ID }}
+          TF_VAR_node_image_id: ${{ secrets.OCI_NODE_IMAGE_ID }}

@@ -1,0 +1,83 @@
+# =============================================================================
+# ArgoCD Sync Workflow
+# =============================================================================
+name: ArgoCD Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to sync'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      application:
+        description: 'Application to sync (leave empty for all)'
+        required: false
+        type: string
+      prune:
+        description: 'Prune resources'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  argocd-sync:
+    name: Sync ArgoCD Applications
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.10.0/argocd-linux-amd64
+          chmod +x argocd
+          sudo mv argocd /usr/local/bin/
+
+      - name: Login to ArgoCD
+        run: |
+          argocd login ${{ secrets.ARGOCD_SERVER }} \
+            --username admin \
+            --password ${{ secrets.ARGOCD_ADMIN_PASSWORD }} \
+            --insecure
+
+      - name: Sync Application
+        run: |
+          if [ -n "${{ github.event.inputs.application }}" ]; then
+            APP_NAME="${{ github.event.inputs.application }}-${{ github.event.inputs.environment }}"
+          else
+            APP_NAME="app-of-apps"
+          fi
+
+          PRUNE_FLAG=""
+          if [ "${{ github.event.inputs.prune }}" == "true" ]; then
+            PRUNE_FLAG="--prune"
+          fi
+
+          argocd app sync $APP_NAME $PRUNE_FLAG --timeout 300
+
+      - name: Wait for Sync
+        run: |
+          if [ -n "${{ github.event.inputs.application }}" ]; then
+            APP_NAME="${{ github.event.inputs.application }}-${{ github.event.inputs.environment }}"
+          else
+            APP_NAME="app-of-apps"
+          fi
+
+          argocd app wait $APP_NAME --timeout 600
+
+      - name: Get Application Status
+        run: |
+          if [ -n "${{ github.event.inputs.application }}" ]; then
+            APP_NAME="${{ github.event.inputs.application }}-${{ github.event.inputs.environment }}"
+          else
+            APP_NAME="app-of-apps"
+          fi
+
+          argocd app get $APP_NAME
