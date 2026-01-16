@@ -1,0 +1,196 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: monitoring
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: 'otel-collector'
+              scrape_interval: 10s
+              static_configs:
+                - targets: ['localhost:8888']
+
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 10000
+
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 1000
+        spike_limit_mib: 200
+
+      resource:
+        attributes:
+          - key: cloud.provider
+            value: ${CLOUD_PROVIDER}
+            action: upsert
+          - key: environment
+            value: ${ENVIRONMENT}
+            action: upsert
+          - key: cluster.name
+            value: ${CLUSTER_NAME}
+            action: upsert
+
+      # Generate metrics from spans
+      spanmetrics:
+        metrics_exporter: prometheus
+        latency_histogram_buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]
+        dimensions:
+          - name: http.method
+          - name: http.status_code
+          - name: service.name
+          - name: cloud.provider
+          - name: environment
+
+    exporters:
+      otlp:
+        endpoint: jaeger-collector:4317
+        tls:
+          insecure: true
+
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+        namespace: otel
+        const_labels:
+          source: otel-collector
+
+      logging:
+        loglevel: info
+
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+      pprof:
+        endpoint: 0.0.0.0:1777
+      zpages:
+        endpoint: 0.0.0.0:55679
+
+    service:
+      extensions: [health_check, pprof, zpages]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, spanmetrics, batch]
+          exporters: [otlp, logging]
+        metrics:
+          receivers: [otlp, prometheus]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus, logging]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: monitoring
+  labels:
+    app: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8889"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.93.0
+          args:
+            - --config=/conf/otel-collector-config.yaml
+          ports:
+            - containerPort: 4317
+              name: otlp-grpc
+            - containerPort: 4318
+              name: otlp-http
+            - containerPort: 8889
+              name: prometheus
+            - containerPort: 13133
+              name: health
+          env:
+            - name: CLOUD_PROVIDER
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['cloud_provider']
+            - name: ENVIRONMENT
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['environment']
+            - name: CLUSTER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['cluster_name']
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: monitoring
+  labels:
+    app: otel-collector
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4317
+      targetPort: otlp-grpc
+      name: otlp-grpc
+    - port: 4318
+      targetPort: otlp-http
+      name: otlp-http
+    - port: 8889
+      targetPort: prometheus
+      name: prometheus
+  selector:
+    app: otel-collector

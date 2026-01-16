@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "true"
+binaryData: {}
+data:
+  cluster-overview.json: |
+    ${CLUSTER_OVERVIEW_DASHBOARD}
+  multi-cloud-overview.json: |
+    ${MULTI_CLOUD_DASHBOARD}
+  application-metrics.json: |
+    ${APPLICATION_METRICS_DASHBOARD}

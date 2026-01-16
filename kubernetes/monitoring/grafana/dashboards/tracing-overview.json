@@ -1,0 +1,251 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(otel_span_count_total[5m]))",
+          "legendFormat": "Spans/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Span Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 5}
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0},
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(otel_span_count_total{status_code=\"ERROR\"}[5m])) / sum(rate(otel_span_count_total[5m])) * 100",
+          "legendFormat": "Error Rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Error Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 100},
+              {"color": "red", "value": 500}
+            ]
+          },
+          "unit": "ms"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0},
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(otel_span_duration_bucket[5m]))) * 1000",
+          "legendFormat": "p95 Latency",
+          "refId": "A"
+        }
+      ],
+      "title": "Latency p95",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {"type": "linear"},
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {"group": "A", "mode": "none"},
+            "thresholdsStyle": {"mode": "off"}
+          },
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "id": 4,
+      "options": {
+        "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "multi", "sort": "none"}
+      },
+      "targets": [
+        {
+          "expr": "sum by (service_name) (rate(otel_span_count_total[5m]))",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Span Rate by Service",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {"type": "linear"},
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {"group": "A", "mode": "none"},
+            "thresholdsStyle": {"mode": "off"}
+          },
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "ms"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "id": 5,
+      "options": {
+        "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "multi", "sort": "none"}
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (service_name, le) (rate(otel_span_duration_bucket[5m]))) * 1000",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Latency p95 by Service",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "jaeger", "uid": "jaeger"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 14},
+      "id": 6,
+      "options": {},
+      "targets": [
+        {
+          "datasource": {"type": "jaeger", "uid": "jaeger"},
+          "query": "service=\"$service\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Traces",
+      "type": "traces"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["tracing", "jaeger", "otel"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(otel_span_count_total, service_name)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Service",
+        "multi": true,
+        "name": "service",
+        "options": [],
+        "query": {"query": "label_values(otel_span_count_total, service_name)", "refId": "StandardVariableQuery"},
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Tracing Overview",
+  "uid": "tracing-overview",
+  "version": 1,
+  "weekStart": ""
+}

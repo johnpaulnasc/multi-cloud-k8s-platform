@@ -1,0 +1,207 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "{namespace=\"$namespace\"} |= \"$search\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Log Stream",
+      "type": "logs"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {"type": "linear"},
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {"group": "A", "mode": "normal"},
+            "thresholdsStyle": {"mode": "off"}
+          },
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "id": 2,
+      "options": {
+        "legend": {"calcs": ["sum"], "displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum by (level) (count_over_time({namespace=\"$namespace\"}[$__interval]))",
+          "legendFormat": "{{level}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Log Volume by Level",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {"type": "linear"},
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {"group": "A", "mode": "normal"},
+            "thresholdsStyle": {"mode": "off"}
+          },
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "id": 3,
+      "options": {
+        "legend": {"calcs": ["sum"], "displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "sum by (pod) (count_over_time({namespace=\"$namespace\"}[$__interval]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Log Volume by Pod",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 16, "w": 24, "x": 0, "y": 12},
+      "id": 4,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "expr": "{namespace=\"$namespace\", pod=~\"$pod\"} |= \"$search\" | json | line_format \"{{.message}}\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Application Logs",
+      "type": "logs"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["logs", "loki", "explorer"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {"type": "loki", "uid": "loki"},
+        "definition": "label_values(namespace)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Namespace",
+        "multi": false,
+        "name": "namespace",
+        "options": [],
+        "query": "label_values(namespace)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {"type": "loki", "uid": "loki"},
+        "definition": "label_values({namespace=\"$namespace\"}, pod)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Pod",
+        "multi": true,
+        "name": "pod",
+        "options": [],
+        "query": "label_values({namespace=\"$namespace\"}, pod)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {"selected": false, "text": "", "value": ""},
+        "hide": 0,
+        "label": "Search",
+        "name": "search",
+        "options": [{"selected": true, "text": "", "value": ""}],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Logs Explorer",
+  "uid": "logs-explorer",
+  "version": 1,
+  "weekStart": ""
+}
